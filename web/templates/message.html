@@ -1,0 +1,70 @@
+{{define "message.html"}}
+{{template "head" .}}
+<section class="page-head">
+  <div>
+    <h1>Message detail</h1>
+    <p class="lede"><a href="/search">&larr; Back to search</a></p>
+  </div>
+</section>
+
+{{if .Detail}}
+<section class="panel">
+  <div class="detail-grid">
+    <div>
+      <div class="stat-label">Message ID</div>
+      <div class="mono detail-val">{{.Detail.MessageID}}</div>
+    </div>
+    <div>
+      <div class="stat-label">Channel</div>
+      <div class="detail-val">{{.Detail.ChannelName}} <span class="cell-sub mono">{{.Detail.ChannelID}}</span></div>
+    </div>
+    <div>
+      <div class="stat-label">Status</div>
+      <div><span class="pill {{statusClass .Detail.Status}}">{{.Detail.Status}}</span></div>
+    </div>
+    <div>
+      <div class="stat-label">Received</div>
+      <div class="mono detail-val">{{.Detail.ReceivedDate}}</div>
+    </div>
+  </div>
+  {{if .Detail.MetaData}}
+  <div class="meta-chips spaced">
+    {{range $k, $v := .Detail.MetaData}}
+    <span class="chip"><span class="chip-k">{{$k}}</span> {{$v}}</span>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+
+<section class="panel">
+  <div class="panel-head"><h2>Connectors</h2></div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Connector</th>
+          <th>Status</th>
+          <th>Received</th>
+          <th>Error</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Detail.Connectors}}
+        <tr>
+          <td>{{.ConnectorName}} <span class="cell-sub mono">id {{.MetaDataID}}</span></td>
+          <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+          <td class="mono">{{.ReceivedDate}}</td>
+          <td class="error-cell">
+            {{if .ProcessingError}}<pre>{{.ProcessingError}}</pre>{{end}}
+            {{if .ResponseError}}<pre>{{.ResponseError}}</pre>{{end}}
+            {{if and (not .ProcessingError) (not .ResponseError)}}—{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+{{template "foot" .}}
+{{end}}

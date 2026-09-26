@@ -1,0 +1,81 @@
+{{define "settings.html"}}
+{{template "head" .}}
+<section class="page-head">
+  <div>
+    <h1>Settings</h1>
+    <p class="lede">Mirth connection, Telegram, and WhatsApp alarm notifications are stored locally in <span class="mono">data/connection.json</span>.</p>
+  </div>
+</section>
+
+{{if .Success}}
+<div class="banner ok">{{.Success}}</div>
+{{end}}
+
+<section class="panel">
+  <form class="search-form settings-form" method="post" action="/settings">
+    <h2 class="section-title">Mirth connection</h2>
+    <label>
+      <span>Mirth URL</span>
+      <input type="text" name="url" value="{{.Settings.URL}}" required placeholder="https://103.125.181.20:9443" />
+    </label>
+    <label>
+      <span>Username</span>
+      <input type="text" name="username" value="{{.Settings.Username}}" required autocomplete="username" />
+    </label>
+    <label>
+      <span>Password {{if .Settings.PasswordSet}}<em>(leave blank to keep saved)</em>{{end}}</span>
+      <input type="password" name="password" value="" autocomplete="current-password" {{if not .Settings.PasswordSet}}required{{end}} />
+    </label>
+    <label class="check">
+      <input type="checkbox" name="tlsInsecure" value="1" {{if .Settings.TLSInsecure}}checked{{end}} />
+      <span>Allow insecure TLS (self-signed cert)</span>
+    </label>
+
+    <h2 class="section-title">Telegram notifications</h2>
+    <p class="hint">Free Bot API alerts for new ERROR alarms on watched channels. Destination is a Telegram <strong>chat id</strong> (group ids usually start with <span class="mono">-100</span>), not a phone number.</p>
+    <label class="check">
+      <input type="checkbox" name="notifyEnabled" value="1" {{if .Settings.NotifyEnabled}}checked{{end}} />
+      <span>Enable Telegram notifications</span>
+    </label>
+    <label>
+      <span>Bot token {{if .Settings.NotifyTokenSet}}<em>(leave blank to keep saved)</em>{{end}}</span>
+      <input type="password" name="notifyTelegramBotToken" value="" autocomplete="off" placeholder="from @BotFather" />
+    </label>
+    <label>
+      <span>Chat / group id</span>
+      <input type="text" name="notifyDestination" value="{{.Settings.NotifyDestination}}" placeholder="-100xxxxxxxxxx" autocomplete="off" />
+    </label>
+
+    <h2 class="section-title">WhatsApp notifications</h2>
+    <p class="hint">Self-hosted WhatsApp gateway (HTTP API). Destination can be a phone number with country code (e.g. <span class="mono">62857…</span>) or a group JID (e.g. <span class="mono">1203630…@g.us</span>). Telegram and WhatsApp can both be enabled.</p>
+    <label class="check">
+      <input type="checkbox" name="whatsappEnabled" value="1" {{if .Settings.WhatsAppEnabled}}checked{{end}} />
+      <span>Enable WhatsApp notifications</span>
+    </label>
+    <label>
+      <span>Gateway base URL</span>
+      <input type="text" name="whatsappBaseUrl" value="{{.Settings.WhatsAppBaseURL}}" placeholder="http://localhost:8080" autocomplete="off" />
+    </label>
+    <label>
+      <span>Instance name</span>
+      <input type="text" name="whatsappInstance" value="{{.Settings.WhatsAppInstance}}" placeholder="mirth-alerts" autocomplete="off" />
+    </label>
+    <label>
+      <span>API key {{if .Settings.WhatsAppAPIKeySet}}<em>(leave blank to keep saved)</em>{{end}}</span>
+      <input type="password" name="whatsappApiKey" value="" autocomplete="off" placeholder="gateway API key" />
+    </label>
+    <label>
+      <span>Destination (phone or group JID)</span>
+      <input type="text" name="whatsappDestination" value="{{.Settings.WhatsAppDestination}}" placeholder="628xxxxxxxxxx or 1203630…@g.us" autocomplete="off" />
+    </label>
+
+    <div class="form-actions">
+      <button type="submit" class="btn primary">Save settings</button>
+      {{if .Configured}}
+      <a class="btn ghost" href="/">Open dashboard</a>
+      {{end}}
+    </div>
+  </form>
+</section>
+{{template "foot" .}}
+{{end}}

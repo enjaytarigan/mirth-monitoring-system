@@ -1,0 +1,101 @@
+{{define "alarms.html"}}
+{{template "head" .}}
+<section class="page-head">
+  <div>
+    <h1>Alarms</h1>
+    <p class="lede">In-app notifications for ERROR connector messages in channel flows.</p>
+  </div>
+  <div class="page-head-meta">
+    <form method="post" action="/alarms/ack">
+      <input type="hidden" name="all" value="1" />
+      <button type="submit" class="btn ghost">Acknowledge all</button>
+    </form>
+  </div>
+</section>
+
+{{if .Success}}
+<div class="banner ok">{{.Success}}</div>
+{{end}}
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Listen for errors</h2>
+    <span class="count mono">{{watchedCount .WatchChannels}} selected</span>
+  </div>
+  <p class="lede tight">Choose which channels the alarm poller should watch. Until you save a selection, all channels are watched.</p>
+  <form method="post" action="/alarms/watch" class="watch-form" id="watch-form">
+    <div class="watch-actions">
+      <button type="button" class="btn tiny ghost" id="watch-all">Select all</button>
+      <button type="button" class="btn tiny ghost" id="watch-none">Clear all</button>
+    </div>
+    <div class="watch-grid">
+      {{range .WatchChannels}}
+      <label class="watch-item">
+        <input type="checkbox" name="channelId" value="{{.ID}}" {{if .Watched}}checked{{end}} />
+        <span>
+          <span class="cell-title">{{.Name}}</span>
+          <span class="cell-sub mono">{{.ID}}</span>
+        </span>
+      </label>
+      {{else}}
+      <p class="empty">No channels available from Mirth.</p>
+      {{end}}
+    </div>
+    {{if .WatchChannels}}
+    <div class="form-actions">
+      <button type="submit" class="btn primary">Save alarm channels</button>
+      {{if not .WatchConfigured}}
+      <span class="cell-sub">Currently listening to all channels (default).</span>
+      {{end}}
+    </div>
+    {{end}}
+  </form>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Alarm feed</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Channel</th>
+          <th>Message</th>
+          <th>Connector</th>
+          <th>Error</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Alarms}}
+        <tr class="{{if .AckedAt}}acked{{end}}">
+          <td class="mono">{{formatTime .CreatedAt}}</td>
+          <td>
+            <div class="cell-title">{{.ChannelName}}</div>
+            <div class="cell-sub mono">{{.ChannelID}}</div>
+          </td>
+          <td class="mono"><a href="/messages/{{.ChannelID}}/{{.MessageID}}">{{.MessageID}}</a></td>
+          <td>{{.ConnectorName}}</td>
+          <td class="error-cell"><pre>{{.ErrorText}}</pre></td>
+          <td>
+            {{if not .AckedAt}}
+            <form method="post" action="/alarms/ack">
+              <input type="hidden" name="id" value="{{.ID}}" />
+              <button type="submit" class="btn tiny">Ack</button>
+            </form>
+            {{else}}
+            <span class="cell-sub">acked {{formatPtrTime .AckedAt}}</span>
+            {{end}}
+          </td>
+        </tr>
+        {{else}}
+        <tr><td colspan="6" class="empty">No alarms yet.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{template "foot" .}}
+{{end}}

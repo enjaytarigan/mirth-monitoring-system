@@ -1,0 +1,12 @@
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+data/
+bin/
+*.db
+.cursor
+.vscode
+**/*_test.go
+**/testdata/

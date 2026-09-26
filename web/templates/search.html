@@ -1,0 +1,152 @@
+{{define "search.html"}}
+{{template "head" .}}
+<section class="page-head">
+  <div>
+    <h1>Channel messages</h1>
+    <p class="lede">Browse messages for a channel, filter by metadata / status / date, and page through results.</p>
+  </div>
+</section>
+
+<section class="panel">
+  <form class="search-form" method="get" action="/search" id="search-form">
+    <input type="hidden" name="page" value="1" />
+    <label>
+      <span>Channel</span>
+      <select name="channelId" id="channel-select" required>
+        <option value="">Select channel…</option>
+        {{range .Channels}}
+        <option value="{{.ID}}" {{if eq $.Form.ChannelID .ID}}selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      <span>Metadata column</span>
+      <select name="column" id="column-select">
+        <option value="">Any / none</option>
+        {{range .Columns}}
+        <option value="{{.Name}}" {{if eq $.Form.Column .Name}}selected{{end}}>{{.Name}} ({{.Type}})</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      <span>Operator</span>
+      <select name="operator">
+        {{range operators}}
+        <option value="{{.}}" {{if eq $.Form.Operator .}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      <span>Value</span>
+      <input type="text" name="value" value="{{.Form.Value}}" placeholder="e.g. MRN or order number" />
+    </label>
+    <label>
+      <span>Status</span>
+      <select name="status">
+        {{range statuses}}
+        <option value="{{.}}" {{if eq $.Form.Status .}}selected{{end}}>{{if .}}{{.}}{{else}}Any{{end}}</option>
+        {{end}}
+      </select>
+    </label>
+    <label>
+      <span>Start date</span>
+      <input type="datetime-local" name="startDate" id="start-date" value="{{.Form.StartDate}}" />
+    </label>
+    <label>
+      <span>End date</span>
+      <input type="datetime-local" name="endDate" id="end-date" value="{{.Form.EndDate}}" />
+    </label>
+    <label>
+      <span>Page size</span>
+      <select name="pageSize">
+        {{$ps := 5}}{{if .Pager}}{{$ps = .Pager.PageSize}}{{end}}
+        <option value="5" {{if eq $ps 5}}selected{{end}}>5</option>
+        <option value="10" {{if eq $ps 10}}selected{{end}}>10</option>
+        <option value="20" {{if eq $ps 20}}selected{{end}}>20</option>
+        <option value="50" {{if eq $ps 50}}selected{{end}}>50</option>
+        <option value="100" {{if eq $ps 100}}selected{{end}}>100</option>
+      </select>
+    </label>
+    <label class="check">
+      <input type="checkbox" name="ignoreCase" value="1" {{if .Form.IgnoreCase}}checked{{end}} />
+      <span>Ignore case</span>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn primary">Search</button>
+    </div>
+  </form>
+</section>
+
+{{if .Form.ChannelID}}
+<section class="panel">
+  <div class="panel-head">
+    <h2>Messages
+      {{if .Pager}}
+      <span class="count mono">
+        {{if gt .Pager.Total 0}}
+          {{add .Pager.Offset 1}}–{{min (add .Pager.Offset (len .Results)) .Pager.Total}} of {{.Pager.Total}}
+        {{else}}
+          {{len .Results}} on this page
+        {{end}}
+      </span>
+      {{end}}
+    </h2>
+  </div>
+
+  {{if .Results}}
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Message ID</th>
+          <th>Received</th>
+          <th>Status</th>
+          <th>Metadata</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Results}}
+        <tr class="clickable" onclick="location.href='/messages/{{.ChannelID}}/{{.MessageID}}'">
+          <td class="mono"><a href="/messages/{{.ChannelID}}/{{.MessageID}}">{{.MessageID}}</a></td>
+          <td class="mono">{{.ReceivedDate}}</td>
+          <td><span class="pill {{statusClass .Status}}">{{.Status}}</span></td>
+          <td>
+            <div class="meta-chips">
+              {{range $k, $v := .MetaData}}
+              <span class="chip"><span class="chip-k">{{$k}}</span> {{$v}}</span>
+              {{end}}
+            </div>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{if .Pager}}
+  <nav class="pager" aria-label="Message pagination">
+    <div class="pager-meta mono">
+      Page {{.Pager.Page}}{{if gt .Pager.TotalPages 0}} / {{.Pager.TotalPages}}{{end}}
+    </div>
+    <div class="pager-actions">
+      {{if .Pager.HasPrev}}
+      <a class="btn ghost" href="/search?{{if .Pager.Query}}{{.Pager.Query}}&{{end}}page={{.Pager.PrevPage}}">← Previous</a>
+      {{else}}
+      <span class="btn ghost disabled">← Previous</span>
+      {{end}}
+      {{if .Pager.HasNext}}
+      <a class="btn ghost" href="/search?{{if .Pager.Query}}{{.Pager.Query}}&{{end}}page={{.Pager.NextPage}}">Next →</a>
+      {{else}}
+      <span class="btn ghost disabled">Next →</span>
+      {{end}}
+    </div>
+  </nav>
+  {{end}}
+
+  {{else}}
+  <p class="empty">No messages matched this filter.</p>
+  {{end}}
+</section>
+{{end}}
+{{template "foot" .}}
+{{end}}

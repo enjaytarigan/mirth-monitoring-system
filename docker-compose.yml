@@ -1,0 +1,47 @@
+# Docker Compose for Mirth Monitor + PostgreSQL
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mirth_monitor
+      POSTGRES_USER: mirth
+      POSTGRES_PASSWORD: mirth
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mirth -d mirth_monitor"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Uncomment to expose Postgres on the host:
+    # ports:
+    #   - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mirth-monitor:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      LISTEN_ADDR: ":8080"
+      DATA_DIR: /app/data
+      DATABASE_URL: postgres://mirth:mirth@postgres:5432/mirth_monitor?sslmode=disable
+      POLL_INTERVAL_MS: "15000"
+      # Optional first-run Mirth seed (prefer Settings UI after start):
+      # MIRTH_URL: https://103.125.181.20:9443
+      # MIRTH_USERNAME: admin
+      # MIRTH_PASSWORD: change-me
+      # MIRTH_TLS_INSECURE: "true"
+    volumes:
+      - app_data:/app/data
+
+volumes:
+  postgres_data:
+  app_data:

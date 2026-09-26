@@ -1,0 +1,52 @@
+{{define "head"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{.Title}} · Mirth Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Schibsted+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/css/app.css" />
+</head>
+<body data-poll-ms="{{.PollMS}}" data-mode="{{.Mode}}">
+  <div class="noise"></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">◈</span>
+      <div>
+        <div class="brand-title">Mirth Monitor</div>
+        <div class="brand-sub">NextGen Connect ops console</div>
+      </div>
+    </div>
+    <nav class="nav">
+      <a href="/" class="{{if eq .Active "dashboard"}}active{{end}}">Dashboard</a>
+      <a href="/search" class="{{if eq .Active "search"}}active{{end}}">Search</a>
+      <a href="/alarms" class="{{if eq .Active "alarms"}}active{{end}}">Alarms</a>
+      <a href="/settings" class="{{if eq .Active "settings"}}active{{end}}">Settings</a>
+    </nav>
+    <div class="header-meta">
+      <a href="/alarms" class="bell" id="alarm-bell" title="Alarms">
+        <span class="bell-icon">⚑</span>
+        <span class="badge {{if eq .Unacked 0}}hidden{{end}}" id="alarm-badge">{{.Unacked}}</span>
+      </a>
+      <div class="conn mode-{{.Mode}}" id="conn-indicator">
+        <span class="dot"></span>
+        <span id="conn-label">{{.ModeLabel}}</span>
+      </div>
+    </div>
+  </header>
+  <main class="shell">
+    {{if .Error}}
+    <div class="banner error">{{.Error}}</div>
+    {{end}}
+{{end}}
+
+{{define "foot"}}
+  </main>
+  <div id="toast-stack" class="toast-stack" aria-live="polite"></div>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
+{{end}}

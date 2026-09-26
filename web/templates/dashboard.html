@@ -1,0 +1,78 @@
+{{define "dashboard.html"}}
+{{template "head" .}}
+<section class="page-head">
+  <div>
+    <h1>Channel statistics</h1>
+    <p class="lede">Live counts from Mirth dashboard statuses. Current statistics, not lifetime.</p>
+  </div>
+  <div class="page-head-meta">
+    <span class="mono" id="last-refresh">{{if .Dashboard}}{{formatTime .Dashboard.RefreshedAt}}{{else}}{{formatTime .Now}}{{end}}</span>
+    <button type="button" class="btn ghost" id="refresh-dashboard">Refresh</button>
+  </div>
+</section>
+
+{{if .Dashboard}}
+<section class="stat-grid" id="stat-grid">
+  <article class="stat-card">
+    <div class="stat-label">Channels started</div>
+    <div class="stat-value amber" id="stat-started">{{.Dashboard.ChannelsStarted}}<span class="stat-den">/{{.Dashboard.ChannelCount}}</span></div>
+  </article>
+  <article class="stat-card">
+    <div class="stat-label">Received</div>
+    <div class="stat-value amber" id="stat-received">{{.Dashboard.Received}}</div>
+  </article>
+  <article class="stat-card">
+    <div class="stat-label">Sent</div>
+    <div class="stat-value amber" id="stat-sent">{{.Dashboard.Sent}}</div>
+  </article>
+  <article class="stat-card">
+    <div class="stat-label">Error</div>
+    <div class="stat-value crimson" id="stat-error">{{.Dashboard.Error}}</div>
+  </article>
+  <article class="stat-card">
+    <div class="stat-label">Queued</div>
+    <div class="stat-value {{if nonzero .Dashboard.Queued}}crimson{{else}}amber{{end}}" id="stat-queued">{{.Dashboard.Queued}}</div>
+  </article>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Channels</h2>
+  </div>
+  <div class="table-wrap">
+    <table class="data" id="channel-table">
+      <thead>
+        <tr>
+          <th>Channel</th>
+          <th>State</th>
+          <th class="num">Received</th>
+          <th class="num">Sent</th>
+          <th class="num">Error</th>
+          <th class="num">Filtered</th>
+          <th class="num">Queued</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Dashboard.Channels}}
+        <tr class="clickable" tabindex="0" role="link" data-href="/search?channelId={{.ChannelID}}" onclick="location.href=this.dataset.href" onkeydown="if(event.key==='Enter'){location.href=this.dataset.href}">
+          <td>
+            <div class="cell-title"><a href="/search?channelId={{.ChannelID}}">{{.Name}}</a></div>
+            <div class="cell-sub mono">{{.ChannelID}}</div>
+          </td>
+          <td><span class="pill {{stateClass .State}}">{{.State}}</span></td>
+          <td class="num mono">{{.Received}}</td>
+          <td class="num mono">{{.Sent}}</td>
+          <td class="num mono {{if nonzero .Error}}hot{{end}}">{{.Error}}</td>
+          <td class="num mono">{{.Filtered}}</td>
+          <td class="num mono {{if nonzero .Queued}}hot{{end}}">{{.Queued}}</td>
+        </tr>
+        {{else}}
+        <tr><td colspan="7" class="empty">No channels returned.</td></tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</section>
+{{end}}
+{{template "foot" .}}
+{{end}}
