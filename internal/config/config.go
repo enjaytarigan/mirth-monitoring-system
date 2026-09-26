@@ -1,12 +1,17 @@
 package config
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type Config struct {
@@ -16,15 +21,13 @@ type Config struct {
 	TLSInsecure    bool
 	PollIntervalMS int
 	ListenAddr     string
-	DataDir        string
+	DataDir        string // optional; only used to migrate legacy connection.json once
 	DatabaseURL    string
 
-	// Telegram (notifyProvider telegram|none for backward compatibility)
 	NotifyProvider         string
 	NotifyDestination      string
 	NotifyTelegramBotToken string
 
-	// WhatsApp via self-hosted HTTP gateway (Evolution-compatible sendText)
 	WhatsAppEnabled     bool
 	WhatsAppBaseURL     string
 	WhatsAppAPIKey      string
@@ -32,6 +35,7 @@ type Config struct {
 	WhatsAppDestination string
 }
 
+// ConnectionFile is the legacy on-disk Settings format (migrated into Postgres once).
 type ConnectionFile struct {
 	URL                    string `json:"url"`
 	Username               string `json:"username"`
@@ -48,9 +52,9 @@ type ConnectionFile struct {
 }
 
 type Store struct {
-	mu   sync.RWMutex
-	path string
-	cfg  Config
+	mu sync.RWMutex
+	db *sql.DB
+	cfg Config
 }
 
 func Load() Config {
@@ -64,7 +68,7 @@ func Load() Config {
 		DataDir:        envOr("DATA_DIR", "data"),
 		DatabaseURL:    envOr("DATABASE_URL", "postgres://mirth:mirth@localhost:5432/mirth_monitor?sslmode=disable"),
 
-		// Optional bootstrap seed; Settings / connection.json owns values after save.
+		// Optional bootstrap seed until Settings are saved in Postgres.
 		NotifyProvider:         envOr("NOTIFY_PROVIDER", "none"),
 		NotifyDestination:      strings.TrimSpace(os.Getenv("NOTIFY_DESTINATION")),
 		NotifyTelegramBotToken: strings.TrimSpace(os.Getenv("NOTIFY_TELEGRAM_BOT_TOKEN")),
@@ -76,22 +80,131 @@ func Load() Config {
 	}
 }
 
-func OpenStore(dataDir string, base Config) (*Store, error) {
-	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+// OpenStore loads Settings from Postgres. If the settings row is empty and a legacy
+// dataDir/connection.json exists, it is imported once then used as the source of truth.
+func OpenStore(databaseURL string, base Config) (*Store, error) {
+	if strings.TrimSpace(databaseURL) == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	db, err := sql.Open("pgx", databaseURL)
+	if err != nil {
 		return nil, err
 	}
-	s := &Store{
-		path: filepath.Join(dataDir, "connection.json"),
-		cfg:  base,
+	db.SetMaxOpenConns(5)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(time.Hour)
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
-	if err := s.loadFile(); err != nil && !os.IsNotExist(err) {
+	s := &Store{db: db, cfg: base}
+	if err := s.migrate(); err != nil {
+		_ = db.Close()
 		return nil, err
+	}
+	loaded, err := s.loadDB()
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if !loaded {
+		if err := s.importLegacyJSON(filepath.Join(base.DataDir, "connection.json")); err != nil && !os.IsNotExist(err) {
+			_ = db.Close()
+			return nil, fmt.Errorf("migrate connection.json: %w", err)
+		}
 	}
 	return s, nil
 }
 
-func (s *Store) loadFile() error {
-	b, err := os.ReadFile(s.path)
+func (s *Store) Close() error {
+	if s.db == nil {
+		return nil
+	}
+	return s.db.Close()
+}
+
+func (s *Store) migrate() error {
+	_, err := s.db.Exec(`
+CREATE TABLE IF NOT EXISTS app_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  mirth_url TEXT NOT NULL DEFAULT '',
+  mirth_username TEXT NOT NULL DEFAULT '',
+  mirth_password TEXT NOT NULL DEFAULT '',
+  tls_insecure BOOLEAN NOT NULL DEFAULT TRUE,
+  notify_provider TEXT NOT NULL DEFAULT 'none',
+  notify_telegram_bot_token TEXT NOT NULL DEFAULT '',
+  notify_destination TEXT NOT NULL DEFAULT '',
+  whatsapp_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  whatsapp_base_url TEXT NOT NULL DEFAULT '',
+  whatsapp_api_key TEXT NOT NULL DEFAULT '',
+  whatsapp_instance TEXT NOT NULL DEFAULT '',
+  whatsapp_destination TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+`)
+	return err
+}
+
+func (s *Store) loadDB() (bool, error) {
+	var (
+		url, user, pass, provider, tgToken, tgDest string
+		waBase, waKey, waInst, waDest              string
+		tlsInsecure, waEnabled                     bool
+	)
+	err := s.db.QueryRow(`
+SELECT mirth_url, mirth_username, mirth_password, tls_insecure,
+       notify_provider, notify_telegram_bot_token, notify_destination,
+       whatsapp_enabled, whatsapp_base_url, whatsapp_api_key, whatsapp_instance, whatsapp_destination
+FROM app_settings WHERE id=1`).Scan(
+		&url, &user, &pass, &tlsInsecure,
+		&provider, &tgToken, &tgDest,
+		&waEnabled, &waBase, &waKey, &waInst, &waDest,
+	)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	applySettingsLocked(&s.cfg, url, user, pass, tlsInsecure, provider, tgToken, tgDest, waEnabled, waBase, waKey, waInst, waDest)
+	return true, nil
+}
+
+func applySettingsLocked(cfg *Config, url, user, pass string, tlsInsecure bool, provider, tgToken, tgDest string, waEnabled bool, waBase, waKey, waInst, waDest string) {
+	if strings.TrimSpace(url) != "" {
+		cfg.MirthURL = strings.TrimRight(strings.TrimSpace(url), "/")
+	}
+	if strings.TrimSpace(user) != "" {
+		cfg.MirthUsername = strings.TrimSpace(user)
+	}
+	if pass != "" {
+		cfg.MirthPassword = pass
+	}
+	cfg.TLSInsecure = tlsInsecure
+	if provider != "" {
+		cfg.NotifyProvider = strings.ToLower(strings.TrimSpace(provider))
+	}
+	if tgToken != "" {
+		cfg.NotifyTelegramBotToken = strings.TrimSpace(tgToken)
+	}
+	cfg.NotifyDestination = strings.TrimSpace(tgDest)
+	cfg.WhatsAppEnabled = waEnabled
+	if strings.TrimSpace(waBase) != "" {
+		cfg.WhatsAppBaseURL = strings.TrimRight(strings.TrimSpace(waBase), "/")
+	}
+	if waKey != "" {
+		cfg.WhatsAppAPIKey = strings.TrimSpace(waKey)
+	}
+	if strings.TrimSpace(waInst) != "" {
+		cfg.WhatsAppInstance = strings.TrimSpace(waInst)
+	}
+	cfg.WhatsAppDestination = strings.TrimSpace(waDest)
+}
+
+func (s *Store) importLegacyJSON(path string) error {
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
@@ -101,38 +214,17 @@ func (s *Store) loadFile() error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if strings.TrimSpace(f.URL) != "" {
-		s.cfg.MirthURL = strings.TrimRight(strings.TrimSpace(f.URL), "/")
+	applySettingsLocked(
+		&s.cfg,
+		f.URL, f.Username, f.Password, f.TLSInsecure,
+		f.NotifyProvider, f.NotifyTelegramBotToken, f.NotifyDestination,
+		f.WhatsAppEnabled, f.WhatsAppBaseURL, f.WhatsAppAPIKey, f.WhatsAppInstance, f.WhatsAppDestination,
+	)
+	if err := s.writeLocked(); err != nil {
+		return err
 	}
-	if strings.TrimSpace(f.Username) != "" {
-		s.cfg.MirthUsername = strings.TrimSpace(f.Username)
-	}
-	if f.Password != "" {
-		s.cfg.MirthPassword = f.Password
-	}
-	s.cfg.TLSInsecure = f.TLSInsecure
-	if f.NotifyProvider != "" {
-		s.cfg.NotifyProvider = strings.ToLower(strings.TrimSpace(f.NotifyProvider))
-	}
-	if f.NotifyTelegramBotToken != "" {
-		s.cfg.NotifyTelegramBotToken = strings.TrimSpace(f.NotifyTelegramBotToken)
-	}
-	if f.NotifyDestination != "" {
-		s.cfg.NotifyDestination = strings.TrimSpace(f.NotifyDestination)
-	}
-	s.cfg.WhatsAppEnabled = f.WhatsAppEnabled
-	if strings.TrimSpace(f.WhatsAppBaseURL) != "" {
-		s.cfg.WhatsAppBaseURL = strings.TrimRight(strings.TrimSpace(f.WhatsAppBaseURL), "/")
-	}
-	if f.WhatsAppAPIKey != "" {
-		s.cfg.WhatsAppAPIKey = strings.TrimSpace(f.WhatsAppAPIKey)
-	}
-	if strings.TrimSpace(f.WhatsAppInstance) != "" {
-		s.cfg.WhatsAppInstance = strings.TrimSpace(f.WhatsAppInstance)
-	}
-	if strings.TrimSpace(f.WhatsAppDestination) != "" {
-		s.cfg.WhatsAppDestination = strings.TrimSpace(f.WhatsAppDestination)
-	}
+	// Keep a backup; stop using the live JSON path.
+	_ = os.Rename(path, path+".migrated")
 	return nil
 }
 
@@ -168,7 +260,7 @@ type SaveInput struct {
 	WhatsAppDestination    string
 }
 
-// Save writes Mirth connection and notify settings together.
+// Save writes Mirth connection and notify settings to Postgres.
 // Blank password / bot token / WhatsApp API key keep previously saved values.
 func (s *Store) Save(in SaveInput) error {
 	s.mu.Lock()
@@ -215,25 +307,47 @@ func (s *Store) SaveConnection(url, username, password string, tlsInsecure bool)
 }
 
 func (s *Store) writeLocked() error {
-	f := ConnectionFile{
-		URL:                    s.cfg.MirthURL,
-		Username:               s.cfg.MirthUsername,
-		Password:               s.cfg.MirthPassword,
-		TLSInsecure:            s.cfg.TLSInsecure,
-		NotifyProvider:         s.cfg.NotifyProvider,
-		NotifyTelegramBotToken: s.cfg.NotifyTelegramBotToken,
-		NotifyDestination:      s.cfg.NotifyDestination,
-		WhatsAppEnabled:        s.cfg.WhatsAppEnabled,
-		WhatsAppBaseURL:        s.cfg.WhatsAppBaseURL,
-		WhatsAppAPIKey:         s.cfg.WhatsAppAPIKey,
-		WhatsAppInstance:       s.cfg.WhatsAppInstance,
-		WhatsAppDestination:    s.cfg.WhatsAppDestination,
-	}
-	b, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(s.path, b, 0o600)
+	_, err := s.db.Exec(`
+INSERT INTO app_settings (
+  id, mirth_url, mirth_username, mirth_password, tls_insecure,
+  notify_provider, notify_telegram_bot_token, notify_destination,
+  whatsapp_enabled, whatsapp_base_url, whatsapp_api_key, whatsapp_instance, whatsapp_destination,
+  updated_at
+) VALUES (
+  1, $1, $2, $3, $4,
+  $5, $6, $7,
+  $8, $9, $10, $11, $12,
+  NOW()
+)
+ON CONFLICT (id) DO UPDATE SET
+  mirth_url=EXCLUDED.mirth_url,
+  mirth_username=EXCLUDED.mirth_username,
+  mirth_password=EXCLUDED.mirth_password,
+  tls_insecure=EXCLUDED.tls_insecure,
+  notify_provider=EXCLUDED.notify_provider,
+  notify_telegram_bot_token=EXCLUDED.notify_telegram_bot_token,
+  notify_destination=EXCLUDED.notify_destination,
+  whatsapp_enabled=EXCLUDED.whatsapp_enabled,
+  whatsapp_base_url=EXCLUDED.whatsapp_base_url,
+  whatsapp_api_key=EXCLUDED.whatsapp_api_key,
+  whatsapp_instance=EXCLUDED.whatsapp_instance,
+  whatsapp_destination=EXCLUDED.whatsapp_destination,
+  updated_at=NOW()
+`,
+		s.cfg.MirthURL,
+		s.cfg.MirthUsername,
+		s.cfg.MirthPassword,
+		s.cfg.TLSInsecure,
+		s.cfg.NotifyProvider,
+		s.cfg.NotifyTelegramBotToken,
+		s.cfg.NotifyDestination,
+		s.cfg.WhatsAppEnabled,
+		s.cfg.WhatsAppBaseURL,
+		s.cfg.WhatsAppAPIKey,
+		s.cfg.WhatsAppInstance,
+		s.cfg.WhatsAppDestination,
+	)
+	return err
 }
 
 func envOr(key, fallback string) string {

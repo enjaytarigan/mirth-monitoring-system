@@ -17,10 +17,11 @@ func main() {
 	loadDotEnv(".env")
 	base := config.Load()
 
-	cfgStore, err := config.OpenStore(base.DataDir, base)
+	cfgStore, err := config.OpenStore(base.DatabaseURL, base)
 	if err != nil {
 		log.Fatalf("config store: %v", err)
 	}
+	defer cfgStore.Close()
 
 	client := mirth.NewClient()
 	cfg := cfgStore.Get()
