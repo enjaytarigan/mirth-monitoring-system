@@ -7,7 +7,7 @@ Full-stack Go operations console for **NextGen Connect (Mirth) 4.5.2**. Talks on
 - **Dashboard** — channel state and current statistics from `GET /api/channels/statuses`
 - **Search** — metadata message search via `GET /api/channels/{id}/messages` (with `metaDataSearch` query params)
 - **Alarms** — PostgreSQL-backed ERROR alarms; optional Telegram and/or WhatsApp alerts
-- **Settings** — Mirth URL / credentials and notification channels; saved to `data/connection.json`
+- **Settings** — Mirth URL / credentials and notification channels; stored in PostgreSQL (`app_settings`)
 
 ## Requirements
 
@@ -38,7 +38,7 @@ docker compose up -d --build
 
 - App: http://localhost:8080  
 - Postgres: internal only (`postgres://mirth:mirth@postgres:5432/mirth_monitor`)  
-- App data volume: `app_data` → `/app/data` (`connection.json`)
+- Optional volume `app_data` only for one-time migration of a legacy `connection.json`
 
 Build image only:
 
